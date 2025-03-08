@@ -15,28 +15,26 @@ private:
     mutable mutex mtx;
     condition_variable cv;
 public:
-    ThreadSafeQueue () : q(new queue<T>()) {};
+    ThreadSafeQueue () : q(new queue<T>()) {q->push(T ());};
     ThreadSafeQueue (const queue<T> &q);
     ThreadSafeQueue (const ThreadSafeQueue<T>& Queue);
     ThreadSafeQueue operator=(const ThreadSafeQueue<T>& Queue);
     ~ThreadSafeQueue() {delete q;}
     void push (T value);
     bool pop (T& value);
+    void display () const;
     template <typename Rep, typename Period>
     bool pop(T &value, chrono::duration<Rep, Period> timeout);
-    void display () const;
 };
 
 template <typename T>
-ThreadSafeQueue<T>::ThreadSafeQueue(const queue<T> &q)
-{
-}
+ThreadSafeQueue<T>::ThreadSafeQueue(const queue<T> &q) : q(new queue<T> (q)){}
 
 template <typename T>
-ThreadSafeQueue<T>::ThreadSafeQueue(const ThreadSafeQueue<T> &Queue) : q(new queue<T>(*Queue.q))
+ThreadSafeQueue<T>::ThreadSafeQueue(const ThreadSafeQueue<T> &Queue)
 {
-    lock_guard<mutex> lock(Queue.mtx);
-    q->push(T ());
+    lock_guard<mutex> lock(Queue->mtx);
+    this->q = new queue<T> (*Queue.q);
 }
 
 template <typename T>
@@ -46,8 +44,10 @@ ThreadSafeQueue<T> ThreadSafeQueue<T>::operator=(const ThreadSafeQueue<T> &Queue
     if (this == *Queue) 
         return *this;
     lock_guard<mutex> lock(Queue.mtx);
+    lock_guard<mutex> otherLock(Queue.mtx);
     delete q;
     this->q = new queue<T> (*Queue.q);
+    return *this;
 }
 
 template <typename T>
@@ -69,6 +69,17 @@ bool ThreadSafeQueue<T>::pop(T &value)
 }
 
 template <typename T>
+void ThreadSafeQueue<T>::display() const
+{
+    lock_guard<mutex> lock(mtx);
+    for (const auto &item : q)
+    {
+        cout << item << " ";
+    }
+    cout << endl;
+}
+
+template <typename T>
 template <typename Rep, typename Period>
 bool ThreadSafeQueue<T>::pop(T &value, chrono::duration<Rep, Period> timeout)
 {
@@ -80,26 +91,30 @@ bool ThreadSafeQueue<T>::pop(T &value, chrono::duration<Rep, Period> timeout)
     return true;
 }
 
-int main() {
+int main()
+{
     ThreadSafeQueue<int> queue;
     bool running = true;
 
-    std::thread producer([&queue, &running] {
-        for (int i = 0; i < 5; ++i) {
+    thread producer([&queue, &running]
+                    {
+        for (int i = 0; i < 5; ++i)
+        {
             queue.push(i);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            this_thread::sleep_for(chrono::milliseconds(100));
         }
         running = false;
     });
 
-    std::thread consumer([&queue, &running] {
-        while (running) {
+    thread consumer([&queue, &running]
+                    {
+        while (running)
+        {
             int value;
-            if (queue.pop(value, std::chrono::seconds(1))) {
-                std::cout << "花费: " << value << std::endl;
-            } else {
-                std::cout << "超时，继续等待..." << std::endl;
-            }
+            if (queue.pop(value, chrono::seconds(1)))
+                cout << "花费: " << value << endl;
+            else
+                cout << "超时，继续等待..." << endl;
         }
     });
 
